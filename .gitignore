@@ -45,3 +45,6 @@ Thumbs.db
 
 # bank output (generated at runtime)
 bank/
+__pycache__/
+*.pyc
+*.pyo
