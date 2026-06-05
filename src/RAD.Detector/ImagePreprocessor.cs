@@ -41,6 +41,30 @@ public static class ImagePreprocessor
         return LoadRgb24(imagePath);
     }
 
+    public static float[] ToNchwTensor0(Image<Rgb24> image)
+    {
+        int w = image.Width, h = image.Height;
+        int ch = w * h;
+        float[] t = new float[3 * ch];
+
+        image.ProcessPixelRows(acc =>
+        {
+            for (int y = 0; y < h; y++)
+            {
+                Span<Rgb24> row = acc.GetRowSpan(y);
+                int off = y * w;
+                for (int x = 0; x < w; x++)
+                {
+                    int i = off + x;
+                    t[i] = (row[x].R / 255f - MeanR) / StdR;
+                    t[ch + i] = (row[x].G / 255f - MeanG) / StdG;
+                    t[2 * ch + i] = (row[x].B / 255f - MeanB) / StdB;
+                }
+            }
+        });
+
+        return t;
+    }
     public static float[] ToNchwTensor(Image<Rgb24> image)
     {
         int w = image.Width, h = image.Height;

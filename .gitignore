@@ -5,9 +5,6 @@
 [Rr]eleasePublic/
 x64/
 x86/
-[Ww][Ii][Nn]32/
-[Aa][Rr][Mm]/
-[Aa][Rr][Mm]64/
 bld/
 [Bb]in/
 [Oo]bj/
@@ -36,15 +33,18 @@ bld/
 !**/[Pp]ackages/repositories.config
 **/[Pp]ackages/repositories.config
 
-# MewUI temp
-MewUI-temp/
-
 # OS
 .DS_Store
 Thumbs.db
 
-# bank output (generated at runtime)
-bank/
+# Python cache
 __pycache__/
 *.pyc
 *.pyo
+
+# bank output (generated at runtime)
+bank/
+
+# Reference code (not part of the app)
+RAD-main/
+RAD-sample/
