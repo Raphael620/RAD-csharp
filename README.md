@@ -1,6 +1,8 @@
 # RAD C# — Cross-Platform Anomaly Detection
 
-Desktop application for visual anomaly detection using DINOv3 features. Based on the [RAD](https://github.com/) method — a training-free approach that builds a memory bank from normal samples and detects anomalies via patch-level KNN retrieval.
+[中文](README.zh-CN.md)
+
+Desktop application for visual anomaly detection using DINOv3 features. Based on the [RAD](https://github.com/longkukuhi/RAD) method — a training-free approach that builds a memory bank from normal samples and detects anomalies via patch-level KNN retrieval.
 
 ![Main UI](sample/MainUI.jpg)
 
@@ -59,10 +61,19 @@ RAD-csharp/
 | Library | Purpose |
 |---------|---------|
 | ONNX Runtime (DirectML) | DINOv3 model inference |
-| MathNet.Numerics | Matrix operations for patch KNN |
 | SixLabors.ImageSharp | Image preprocessing & visualization |
 | MewUI | Cross-platform desktop GUI |
+
+## Reference
+
+- [RAD Paper Repository](https://github.com/longkukuhi/RAD)
 
 ## License
 
 MIT
+
+---
+
+<div align="center">
+If this project helps you, please give it a ⭐ Star!
+</div>
