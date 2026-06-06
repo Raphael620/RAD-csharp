@@ -4,7 +4,7 @@ static class HtmlTemplates
 {
     static string H(string s) => System.Net.WebUtility.HtmlEncode(s);
 
-    public static string Css => @"
+    public static readonly string Css = (@"
 *{margin:0;padding:0;box-sizing:border-box}
 body{font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#f5f5f5;color:#222;padding:16px;max-width:1200px;margin:0 auto}
 h1{font-size:20px;margin-bottom:14px}h3{font-size:15px;margin-bottom:6px}
@@ -28,7 +28,7 @@ hr{margin:10px 0}
 .thumb{display:inline-block;margin:4px;text-align:center;position:relative}
 .thumb img{width:120px;height:120px;object-fit:contain;border:1px solid #ddd;border-radius:4px}
 .thumb p{font-size:10px;margin:2px 0;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-".Trim();
+").Trim();
 
     public static string Page(string title, string body, string? script = null) =>
         "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">" +

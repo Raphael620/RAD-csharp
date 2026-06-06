@@ -246,7 +246,7 @@ public class MainWindow
     private void LoadModel(string path)
     {
         _inference?.Dispose();
-        string device = _vm.DeviceIndex.Value == 0 ? "GPU" : "CPU";
+        string device = _vm.DeviceIndex.Value == 0 ? "CPU" : "GPU";
         _inference = new RadInference(path, device);
         _vm.AppendLog($"Model loaded ({_inference.ActiveDevice}): {Path.GetFileName(path)}");
     }

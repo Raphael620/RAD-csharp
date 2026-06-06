@@ -72,8 +72,9 @@ public static class BankSerializer
     // --- Bank save ---
     public static void SaveBank(
         string bankDir, int[] layers,
-        float[][] clsBanks,  // [numLayers][N * C]
-        float[][][] patchBanks) // [numLayers][N * L * C]
+        float[][] clsBanks,       // [numLayers][N * C]
+        float[][] patchBanks,     // [numLayers][N * L * C] flat
+        int embedDim, int numPatches)
     {
         Directory.CreateDirectory(bankDir);
 
@@ -89,62 +90,44 @@ public static class BankSerializer
         {
             int layerIdx = layers[li];
             float[] clsData = clsBanks[li];
-            float[] patchData = patchBanks[li].SelectMany(p => p).ToArray();
+            float[] patchData = patchBanks[li];
 
-            int N = clsData.Length / patchData.Length * patchData.Length; // rough
+            int N = clsData.Length / embedDim;
 
             // cls: [N, C]
             {
                 using var fs = File.Create(Path.Combine(bankDir, $"cls_layer{layerIdx}.bin"));
                 using var bw = new BinaryWriter(fs);
-                int C = clsData.Length / (patchData.Length / patchBanks[li][0].Length);
-                // We don't know N directly, reconstruct from saved format
-                // Actually clsData is flat [N*C], we need N somehow
-                // Let's store (ndim=2, N, C, data)
-                // We'll reconstruct N from the patch banks shape
-                int patchN = patchBanks[li].Length;
-                int patchL = patchBanks[li][0].Length;
-                int C2 = clsData.Length / patchN;
-                SaveFloatArray(bw, clsData, [patchN, C2]);
+                SaveFloatArray(bw, clsData, [N, embedDim]);
             }
 
             // patch: [N, L, C]
             {
                 using var fs = File.Create(Path.Combine(bankDir, $"patch_layer{layerIdx}.bin"));
                 using var bw = new BinaryWriter(fs);
-                int patchN2 = patchBanks[li].Length;
-                int patchL2 = patchBanks[li][0].Length;
-                int C3 = patchData.Length / (patchN2 * patchL2);
-                SaveFloatArray(bw, patchData, [patchN2, patchL2, C3]);
+                int C = patchData.Length / (N * numPatches);
+                SaveFloatArray(bw, patchData, [N, numPatches, C]);
             }
         }
     }
 
     /// <summary>
     /// Load a complete bank from directory.
-    /// Returns layers, clsBanks as [numLayers][N*C], patchBanks as [numLayers][N*L*C].
+    /// Returns layers, clsBanks as [numLayers][N*C], patchBanks as [numLayers][N*L*C] flat.
     /// </summary>
-    public static (int[] layers, float[][] clsBanks, float[][][] patchBanks)
+    public static (int[] layers, float[][] clsBanks, float[][] patchBanks)
         LoadBank(string bankDir)
     {
         var layers = LoadLayers(Path.Combine(bankDir, "layers.bin"));
 
         var clsBanks = new float[layers.Length][];
-        var patchBanks = new float[layers.Length][][];
+        var patchBanks = new float[layers.Length][];
 
         for (int i = 0; i < layers.Length; i++)
         {
             int layer = layers[i];
-            clsBanks[i] = Load2D(Path.Combine(bankDir, $"cls_layer{layer}.bin"), out int n, out int c);
-            float[] patchFlat = Load3D(Path.Combine(bankDir, $"patch_layer{layer}.bin"), out int pn, out int pl, out int pc);
-
-            // Reshape flat patch to [N][L*C]
-            patchBanks[i] = new float[pn][];
-            for (int j = 0; j < pn; j++)
-            {
-                patchBanks[i][j] = new float[pl * pc];
-                Array.Copy(patchFlat, j * pl * pc, patchBanks[i][j], 0, pl * pc);
-            }
+            clsBanks[i] = Load2D(Path.Combine(bankDir, $"cls_layer{layer}.bin"), out _, out _);
+            patchBanks[i] = Load3D(Path.Combine(bankDir, $"patch_layer{layer}.bin"), out _, out _, out _);
         }
 
         return (layers, clsBanks, patchBanks);

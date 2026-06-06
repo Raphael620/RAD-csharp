@@ -21,7 +21,8 @@ class Program
     static int _kImage = 10;
     static string? _category;
     static readonly StringBuilder _logBuf = new();
-    static string LogText => _logBuf.ToString();
+    static readonly object _lock = new();
+    static string LogText { get { lock (_lock) return _logBuf.ToString(); } }
     static double _preMs, _boneMs, _postMs, _vizMs, _totalMs;
     static readonly string _baseDir = AppDomain.CurrentDomain.BaseDirectory;
     static string ImagesDir => Path.Combine(_baseDir, "images");
@@ -50,21 +51,31 @@ class Program
     {
         var ts = DateTime.Now.ToString("HH:mm:ss");
         var line = $"[{ts}] {msg}";
-        lock (_logBuf) { _logBuf.Insert(0, line + "\n"); if (_logBuf.Length > 10000) _logBuf.Length = 10000; }
+        lock (_lock) { _logBuf.Insert(0, line + "\n"); if (_logBuf.Length > 10000) _logBuf.Length = 10000; }
         Console.WriteLine(line);
     }
 
-    static string TimingText => _bankLoaded
-        ? $"Pre: {_preMs:F1}ms  Bone: {_boneMs:F1}ms  Post: {_postMs:F1}ms  Viz: {_vizMs:F1}ms  Total: {_totalMs:F1}ms"
-        : "Pre: --ms  Bone: --ms  Post: --ms  Viz: --ms  Total: --ms";
+    static string TimingText
+    {
+        get
+        {
+            bool loaded; double pre, bone, post, viz, total;
+            lock (_lock) { loaded = _bankLoaded; pre = _preMs; bone = _boneMs; post = _postMs; viz = _vizMs; total = _totalMs; }
+            return loaded
+                ? $"Pre: {pre:F1}ms  Bone: {bone:F1}ms  Post: {post:F1}ms  Viz: {viz:F1}ms  Total: {total:F1}ms"
+                : "Pre: --ms  Bone: --ms  Post: --ms  Viz: --ms  Total: --ms";
+        }
+    }
 
     static void TryLoadModel()
     {
-        var path = Path.Combine(_baseDir, _modelPath);
+        string path;
+        lock (_lock) { path = Path.Combine(_baseDir, _modelPath); }
         if (File.Exists(path))
         {
-            _inference = new RadInference(path, _device, _kImage);
-            Log($"Model loaded ({_inference.ActiveDevice}): {Path.GetFileName(path)}");
+            var inf = new RadInference(path, _device, _kImage);
+            lock (_lock) { _inference = inf; }
+            Log($"Model loaded ({inf.ActiveDevice}): {Path.GetFileName(path)}");
         }
         else Log($"Model not found: {path}");
     }
@@ -96,27 +107,46 @@ class Program
                 default: Serve(resp, HtmlTemplates.ErrorPage("Not Found")); break;
             }
         }
-        catch (Exception ex) { try { Serve(ctx.Response, HtmlTemplates.ErrorPage(ex.Message)); } catch { } }
+        catch (Exception ex)
+        {
+            try { Serve(ctx.Response, HtmlTemplates.ErrorPage(ex.Message)); }
+            catch { try { ctx.Response.Close(); } catch { } }
+        }
     }
 
     // ====== Pages ======
     static string MainPage()
     {
+        string modelPath, device;
+        string? category;
+        int kImage;
+        float threshold;
+        bool bankLoaded;
+        lock (_lock)
+        {
+            modelPath = _modelPath;
+            device = _device;
+            kImage = _kImage;
+            threshold = _threshold;
+            bankLoaded = _bankLoaded;
+            category = _category;
+        }
+
         var catOpts = "<option value=\"\">-- Select category --</option>";
         foreach (var d in GetCategories())
-            catOpts += $"<option value=\"{H(d)}\"{(d == _category ? " selected" : "")}>{d}</option>";
+            catOpts += $"<option value=\"{H(d)}\"{(d == category ? " selected" : "")}>{d}</option>";
 
         var testOpts = "<option value=\"\">-- Select image --</option>";
-        if (_category != null)
+        if (category != null)
         {
-            var testDir = Path.Combine(ImagesDir, _category, "test");
+            var testDir = Path.Combine(ImagesDir, category, "test");
             if (Directory.Exists(testDir))
                 foreach (var f in ImageFiles(testDir))
                     testOpts += $"<option value=\"{H(f)}\">{Path.GetFileName(f)}</option>";
         }
 
-        return HtmlTemplates.MainPage(_modelPath, _device, _kImage, _threshold,
-            _bankLoaded, _category, LogText, TimingText, catOpts, testOpts);
+        return HtmlTemplates.MainPage(modelPath, device, kImage, threshold,
+            bankLoaded, category, LogText, TimingText, catOpts, testOpts);
     }
 
     static void ServePreview(HttpListenerContext ctx)
@@ -138,30 +168,41 @@ class Program
     // ====== Actions ======
     static void SetParams(NameValueCollection qs, HttpListenerResponse resp)
     {
-        if (qs["model"] is string m and { Length: > 0 }) _modelPath = m;
-        if (qs["device"] is string d) { _device = d; _inference?.SwitchDevice(d); }
-        if (float.TryParse(qs["threshold"], out var t)) _threshold = t;
-        if (int.TryParse(qs["kimage"], out var k) && k > 0) { _kImage = k; if (_inference != null) _inference.KImage = k; }
-        if (qs["category"] is string c) _category = c.Length > 0 ? c : null;
+        lock (_lock)
+        {
+            if (qs["model"] is string m and { Length: > 0 }) _modelPath = m;
+            if (qs["device"] is string d) { _device = d; _inference?.SwitchDevice(d); }
+            if (float.TryParse(qs["threshold"], out var t)) _threshold = t;
+            if (int.TryParse(qs["kimage"], out var k) && k > 0) { _kImage = k; if (_inference != null) _inference.KImage = k; }
+            if (qs["category"] is string c) _category = c.Length > 0 ? c : null;
+        }
         Serve(resp, HtmlTemplates.RedirectPage(qs["back"] ?? "/"));
     }
 
     static void ReloadModel(NameValueCollection qs, HttpListenerResponse resp)
     {
-        if (qs["model"] is string m) _modelPath = m;
-        if (qs["device"] is string d) _device = d;
-        _inference?.Dispose();
-        TryLoadModel();
-        if (_inference != null)
+        RadInference? inf;
+        string? cat;
+        lock (_lock)
         {
-            // Reload bank if category is set
-            if (_category != null)
+            if (qs["model"] is string m) _modelPath = m;
+            if (qs["device"] is string d) _device = d;
+            _inference?.Dispose();
+            _inference = null;
+            _bankLoaded = false;
+            cat = _category;
+        }
+        TryLoadModel();
+        lock (_lock)
+        {
+            inf = _inference;
+            if (inf != null && cat != null)
             {
-                var bankDir = Path.Combine(ImagesDir, _category, ".bankdata");
-                if (Directory.Exists(bankDir)) { _inference.LoadBank(bankDir); _bankLoaded = true; }
+                var bankDir = Path.Combine(ImagesDir, cat, ".bankdata");
+                if (Directory.Exists(bankDir)) { inf.LoadBank(bankDir); _bankLoaded = true; }
             }
         }
-        ServeText(resp, _inference != null ? $"Loaded ({_inference.ActiveDevice})" : "FAILED");
+        ServeText(resp, inf != null ? $"Loaded ({inf.ActiveDevice})" : "FAILED");
     }
 
     static void CreateCategory(NameValueCollection qs, HttpListenerResponse resp)
@@ -173,8 +214,7 @@ class Program
         Directory.CreateDirectory(d);
         Directory.CreateDirectory(Path.Combine(d, "bank"));
         Directory.CreateDirectory(Path.Combine(d, "test"));
-        _category = name;
-        _bankLoaded = false;
+        lock (_lock) { _category = name; _bankLoaded = false; }
         Log($"Created category: {name}");
         Serve(resp, HtmlTemplates.RedirectPage("/?category=" + HttpUtility.UrlEncode(name)));
     }
@@ -189,7 +229,9 @@ class Program
     static void BuildBankStream(NameValueCollection qs, HttpListenerResponse resp)
     {
         var cat = qs["category"] ?? _category ?? "";
-        if (_inference == null) { Serve(resp, HtmlTemplates.ErrorPage("Model not loaded")); return; }
+        RadInference? inf;
+        lock (_lock) { inf = _inference; }
+        if (inf == null) { Serve(resp, HtmlTemplates.ErrorPage("Model not loaded")); return; }
         if (string.IsNullOrEmpty(cat)) { Serve(resp, HtmlTemplates.ErrorPage("No category selected")); return; }
 
         var bankDir = Path.Combine(ImagesDir, cat, "bank");
@@ -212,18 +254,18 @@ class Program
         var sw = Stopwatch.StartNew();
         try
         {
-            var (p, t) = Task.Run(() => _inference.BuildBank(bankDir, bankOut, msg =>
+            var (p, t) = Task.Run(() => inf.BuildBank(bankDir, bankOut, msg =>
             {
                 Sse("log", msg);
             })).Result;
-            _bankLoaded = true; _category = cat;
+            lock (_lock) { _bankLoaded = true; _category = cat; }
             Sse("log", $"Bank built: {p}/{t} images, {sw.Elapsed.TotalSeconds:F1}s");
             Sse("done", $"/?category={HttpUtility.UrlEncode(cat)}");
         }
         catch (Exception ex)
         {
             Sse("log", $"Build failed: {ex.Message}");
-            _bankLoaded = false;
+            lock (_lock) { _bankLoaded = false; }
             Sse("done", $"/?category={HttpUtility.UrlEncode(cat)}");
         }
         writer.Close();
@@ -234,33 +276,56 @@ class Program
         var cat = qs["category"] ?? _category ?? "";
         var file = qs["file"] ?? "";
 
-        if (_inference == null) { Serve(resp, HtmlTemplates.ErrorPage("Model not loaded")); return; }
+        RadInference? inf;
+        float threshold;
+        int kImage;
+        bool bankLoaded;
+        string? loadedCat;
+        lock (_lock)
+        {
+            inf = _inference;
+            threshold = _threshold;
+            kImage = _kImage;
+            bankLoaded = _bankLoaded;
+            loadedCat = _category;
+        }
+
+        if (inf == null) { Serve(resp, HtmlTemplates.ErrorPage("Model not loaded")); return; }
         if (string.IsNullOrEmpty(cat)) { Serve(resp, HtmlTemplates.ErrorPage("No category selected")); return; }
         if (!File.Exists(file)) { Serve(resp, HtmlTemplates.ErrorPage("File not found")); return; }
 
         var bankData = Path.Combine(ImagesDir, cat, ".bankdata");
-        if (!_bankLoaded || _category != cat)
+        if (!bankLoaded || loadedCat != cat)
         {
-            if (Directory.Exists(bankData)) { _inference.LoadBank(bankData); _bankLoaded = true; _category = cat; }
+            if (Directory.Exists(bankData))
+            {
+                inf.LoadBank(bankData);
+                lock (_lock) { _bankLoaded = true; _category = cat; }
+            }
             else { Serve(resp, HtmlTemplates.ErrorPage("Bank not built for this category. Build it first.")); return; }
         }
 
-        _inference.KImage = _kImage;
+        inf.KImage = kImage;
         var totalSw = Stopwatch.StartNew();
-        var (amap, score) = _inference.Detect(file, _threshold, out _preMs, out _boneMs, out _postMs);
+        var (amap, score) = inf.Detect(file, threshold, out var preMs, out var boneMs, out var postMs);
         var vizSw = Stopwatch.StartNew();
 
         using var orig = ImagePreprocessor.LoadForDisplay(file);
         using var heat = VisualizationHelper.CreateHeatmap(amap, orig.Width, orig.Height);
         using var over = VisualizationHelper.CreateOverlay(orig, heat, 0.35f);
-        using var mask = VisualizationHelper.CreateBinaryMask(amap, _threshold, orig.Width, orig.Height);
+        using var mask = VisualizationHelper.CreateBinaryMask(amap, threshold, orig.Width, orig.Height);
         using var origRgba = orig.CloneAs<Rgba32>();
         var ds = 256;
         using var oD = VisualizationHelper.ResizeForDisplay(origRgba, ds);
         using var hD = VisualizationHelper.ResizeForDisplay(heat, ds);
         using var vD = VisualizationHelper.ResizeForDisplay(over, ds);
         using var mD = VisualizationHelper.ResizeForDisplay(mask, ds);
-        _vizMs = vizSw.Elapsed.TotalMilliseconds; _totalMs = totalSw.Elapsed.TotalMilliseconds;
+
+        lock (_lock)
+        {
+            _preMs = preMs; _boneMs = boneMs; _postMs = postMs;
+            _vizMs = vizSw.Elapsed.TotalMilliseconds; _totalMs = totalSw.Elapsed.TotalMilliseconds;
+        }
 
         Log($"Detection complete. Score: {score:F4}");
         var json = $"{{\"orig\":\"data:image/png;base64,{ImgToB64(oD)}\",\"heat\":\"data:image/png;base64,{ImgToB64(hD)}\",\"over\":\"data:image/png;base64,{ImgToB64(vD)}\",\"mask\":\"data:image/png;base64,{ImgToB64(mD)}\",\"score\":{score:F4},\"timing\":\"{TimingText.Replace("\"", "\\\"")}\"}}";
@@ -271,7 +336,8 @@ class Program
     static void Upload(HttpListenerRequest req, HttpListenerResponse resp)
     {
         var (fields, fileCount, lastErr) = ParseMultipart(req);
-        var cat = fields.Get("cat") ?? fields.Get("category") ?? _category ?? "";
+        string cat;
+        lock (_lock) { cat = fields.Get("cat") ?? fields.Get("category") ?? _category ?? ""; }
         var type = fields.Get("tp") ?? fields.Get("type") ?? "bank";
         if (string.IsNullOrEmpty(cat)) { Serve(resp, HtmlTemplates.ErrorPage("No category")); return; }
 

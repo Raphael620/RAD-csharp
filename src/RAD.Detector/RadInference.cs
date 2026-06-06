@@ -15,8 +15,8 @@ public sealed class RadInference : IDisposable
     // Bank data
     private int[]? _layers;
     private float[][]? _clsBanks;       // [numLayers][N * C]
-    private float[][][]? _patchBanks;   // [numLayers][N][L*C]
-    private float[][][]? _patchBanksNorm; // pre-normalized patch banks
+    private float[][]? _patchBanks;     // [numLayers][N * L * C]  flat, better cache locality
+    private float[][]? _patchBanksNorm; // pre-normalized patch banks, same layout
 
     private float[] _layerWeights;
     private int _kImage = 150;
@@ -134,26 +134,28 @@ public sealed class RadInference : IDisposable
         // --- Phase 2: build bank arrays ---
         _layers = _modelInfo.LayerIndices;
         _clsBanks = new float[numLayers][];
-        _patchBanks = new float[numLayers][][];
-        _patchBanksNorm = new float[numLayers][][];
+        _patchBanks = new float[numLayers][];
+        _patchBanksNorm = new float[numLayers][];
 
         for (int li = 0; li < numLayers; li++)
         {
             int N = clsFeats[li].Count;
             _clsBanks[li] = new float[N * embedDim];
-            _patchBanks[li] = new float[N][];
-            _patchBanksNorm[li] = new float[N][];
+            int patchFlatLen = N * numPatches * embedDim;
+            _patchBanks[li] = new float[patchFlatLen];
+            _patchBanksNorm[li] = new float[patchFlatLen];
 
             for (int n = 0; n < N; n++)
             {
                 Array.Copy(clsFeats[li][n], 0, _clsBanks[li], n * embedDim, embedDim);
-                _patchBanks[li][n] = patchFeats[li][n];
-                _patchBanksNorm[li][n] = NormalizePerPatch(patchFeats[li][n], embedDim);
+                Array.Copy(patchFeats[li][n], 0, _patchBanks[li], n * numPatches * embedDim, patchFeats[li][n].Length);
             }
+            // Normalize all patches in one pass
+            _patchBanksNorm[li] = NormalizePerPatch(_patchBanks[li], embedDim);
         }
 
         // --- Phase 3: save to bin ---
-        BankSerializer.SaveBank(bankOutputDir, _layers, _clsBanks, _patchBanks);
+        BankSerializer.SaveBank(bankOutputDir, _layers, _clsBanks, _patchBanks, embedDim, numPatches);
 
         onProgress?.Invoke($"Bank built with {totalProcessed}/{imageFiles.Length} images, saved to {bankOutputDir}");
         return (totalProcessed, imageFiles.Length);
@@ -167,15 +169,11 @@ public sealed class RadInference : IDisposable
         var (layers, clsBanks, patchBanks) = BankSerializer.LoadBank(bankDir);
         _layers = layers;
         _clsBanks = clsBanks;
-
         _patchBanks = patchBanks;
-        _patchBanksNorm = new float[layers.Length][][];
+
+        _patchBanksNorm = new float[layers.Length][];
         for (int li = 0; li < layers.Length; li++)
-        {
-            _patchBanksNorm[li] = new float[patchBanks[li].Length][];
-            for (int n = 0; n < patchBanks[li].Length; n++)
-                _patchBanksNorm[li][n] = NormalizePerPatch(patchBanks[li][n], _modelInfo.EmbedDim);
-        }
+            _patchBanksNorm[li] = NormalizePerPatch(patchBanks[li], _modelInfo.EmbedDim);
     }
 
     /// <summary>
@@ -385,14 +383,16 @@ public sealed class RadInference : IDisposable
         {
             float[] qNorm = queryPatchNorm[li];
             float[] layerScores = layerScoresAll[li];
+            float[] bankNorm = _patchBanksNorm![li];
+            int patchStride = numPatches * embedDim;
             for (int p = 0; p < numPatches; p++)
             {
                 var qPatchSpan = qNorm.AsSpan(p * embedDim, embedDim);
                 float maxSim = -1f;
+                int pOff = p * embedDim;
                 for (int ki = 0; ki < k; ki++)
                 {
-                    float[] bankPatch = _patchBanksNorm![li][sortedIdx[ki]];
-                    var bPatchSpan = bankPatch.AsSpan(p * embedDim, embedDim);
+                    var bPatchSpan = bankNorm.AsSpan(sortedIdx[ki] * patchStride + pOff, embedDim);
                     float sim = TensorPrimitives.Dot(qPatchSpan, bPatchSpan);
                     if (sim > maxSim) maxSim = sim;
                 }
@@ -421,7 +421,11 @@ public sealed class RadInference : IDisposable
             anomalyMap = GaussianBlur(anomalyMap, 5, 1.0f);
 
         // 取全局最大值
-        float score = anomalyMap.Cast<float>().Max();
+        float score = 0;
+        int ah = anomalyMap.GetLength(0), aw = anomalyMap.GetLength(1);
+        for (int y = 0; y < ah; y++)
+            for (int x = 0; x < aw; x++)
+                if (anomalyMap[y, x] > score) score = anomalyMap[y, x];
 
         return (anomalyMap, score);
     }
@@ -433,6 +437,7 @@ public sealed class RadInference : IDisposable
     /// Normalize each patch (C-dim segment) independently, matching Python:
     /// norms = np.linalg.norm(pb, axis=2, keepdims=True); pb_norm = pb / norms
     /// </summary>
+    [Obsolete("保留用于性能对比")]
     private static float[] NormalizePerPatch0(float[] flat, int embedDim)
     {
         int numPatches = flat.Length / embedDim;

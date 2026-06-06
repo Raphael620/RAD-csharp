@@ -41,6 +41,7 @@ public static class ImagePreprocessor
         return LoadRgb24(imagePath);
     }
 
+    [Obsolete("保留用于性能对比")]
     public static float[] ToNchwTensor0(Image<Rgb24> image)
     {
         int w = image.Width, h = image.Height;

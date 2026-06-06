@@ -25,6 +25,7 @@ public static class VisualizationHelper
         return lut;
     }
 
+    [Obsolete("保留用于性能对比")]
     public static Image<Rgba32> CreateHeatmap0(float[,] amap, int targetW, int targetH)
     {
         int h = amap.GetLength(0), w = amap.GetLength(1);
@@ -59,6 +60,7 @@ public static class VisualizationHelper
         return img;
     }
 
+    [Obsolete("保留用于性能对比")]
     public static Image<Rgba32> CreateOverlay0(Image<Rgb24> orig, Image<Rgba32> heat, float alpha = 0.5f)
     {
         int w = orig.Width, h = orig.Height;
@@ -126,6 +128,7 @@ public static class VisualizationHelper
         return ms.ToArray();
     }
 
+    [Obsolete("保留用于性能对比")]
     public static Image<Rgba32> ResizeForDisplay0(Image<Rgba32> src, int maxSide)
     {
         float scale = Math.Min((float)maxSide / src.Width, (float)maxSide / src.Height);
@@ -227,12 +230,11 @@ public static class VisualizationHelper
     public static Image<Rgba32> CreateHeatmap(float[,] amap, int targetW, int targetH)
     {
         int h = amap.GetLength(0), w = amap.GetLength(1);
-        // 展平为一维数组，一次拷贝
-        float[] flat = new float[h * w];
-        Buffer.BlockCopy(amap, 0, flat, 0, flat.Length * sizeof(float));
 
         float vmax = 0f;
-        foreach (var v in flat) if (v > vmax) vmax = v;
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+                if (amap[y, x] > vmax) vmax = amap[y, x];
         float scaleMax = Math.Max(vmax, 0.3f);
         float invScale = 255f / scaleMax;
 
@@ -246,11 +248,10 @@ public static class VisualizationHelper
             {
                 Span<Rgba32> row = acc.GetRowSpan(y);
                 int sy = (int)(y * stepY + 0.5f);
-                int baseY = sy * w;
                 for (int x = 0; x < targetW; x++)
                 {
                     int sx = (int)(x * stepX + 0.5f);
-                    float v = flat[baseY + sx] * invScale;
+                    float v = amap[sy, sx] * invScale;
                     int idx = v < 0 ? 0 : v > 255 ? 255 : (int)v;
                     row[x] = JetLut[idx];
                 }
