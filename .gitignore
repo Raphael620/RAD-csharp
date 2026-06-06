@@ -48,3 +48,4 @@ bank/
 # Reference code (not part of the app)
 RAD-main/
 RAD-sample/
+.bitfun/

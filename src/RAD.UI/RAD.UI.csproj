@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <OutputType>WinExe</OutputType>
+    <OutputType>Exe</OutputType>
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -12,15 +12,12 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
     <DebuggerSupport>false</DebuggerSupport>
-    <ApplicationIcon>icon.ico</ApplicationIcon>
   </PropertyGroup>
   <ItemGroup>
-    <Content Include="icon.ico" />
+    <Content Include="icon.ico" Condition="'$(RuntimeIdentifier)' == '' Or '$(RuntimeIdentifier)' == 'win-x64' Or '$(RuntimeIdentifier)' == 'win-arm64'" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Aprillz.MewUI.Windows" Version="0.15.2" Condition="'$(RuntimeIdentifier)' == 'win-x64' Or '$(RuntimeIdentifier)' == ''" />
-    <PackageReference Include="Aprillz.MewUI.Linux" Version="0.15.2" Condition="'$(RuntimeIdentifier)' == 'linux-x64'" />
-    <PackageReference Include="Aprillz.MewUI.MacOS" Version="0.15.2" Condition="'$(RuntimeIdentifier)' == 'osx-arm64' Or '$(RuntimeIdentifier)' == 'osx-x64'" />
+    <PackageReference Include="Aprillz.MewUI" Version="0.15.2" />
     <PackageReference Include="SixLabors.ImageSharp" Version="3.1.7" />
   </ItemGroup>
   <ItemGroup>

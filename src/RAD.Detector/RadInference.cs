@@ -38,7 +38,6 @@ public sealed class RadInference : IDisposable
         _layerWeights = Enumerable.Repeat(1f / _modelInfo.LayerIndices.Length, _modelInfo.LayerIndices.Length).ToArray();
     }
 
-    /// <summary>Switch device at runtime without losing bank data.</summary>
     public string SwitchDevice(string device = "CPU")
     {
         _session?.Dispose();
@@ -51,19 +50,19 @@ public sealed class RadInference : IDisposable
         var options = new Microsoft.ML.OnnxRuntime.SessionOptions();
 
         bool useGpu = device.Equals("GPU", StringComparison.OrdinalIgnoreCase) ||
-                      device.Equals("CPU", StringComparison.OrdinalIgnoreCase);
+                      device.Equals("DML", StringComparison.OrdinalIgnoreCase);
 
         if (useGpu)
         {
             try
             {
                 options.AppendExecutionProvider_DML(0);
-                ActiveDevice = "DML";
+                ActiveDevice = "GPU (DirectML)";
             }
-            catch (Exception ex)
+            catch
             {
-                options.AppendExecutionProvider_CPU(0);
-                ActiveDevice = $"CPU (DML failed)";
+                options.AppendExecutionProvider_CPU();
+                ActiveDevice = "CPU (DML unavailable)";
             }
         }
         else
