@@ -22,10 +22,24 @@
 ### 环境要求
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 
-### 运行
+### RAD.UI（桌面 GUI）
 ```bash
 dotnet run --project src/RAD.UI/RAD.UI.csproj
 ```
+
+### RAD.WebUI（Web 界面）
+```bash
+dotnet run --project src/RAD.WebUI/RAD.WebUI.csproj
+# 浏览器打开 http://localhost:8080（可通过 -- <端口号> 修改端口）
+```
+
+**RAD.WebUI** 是一个零外部依赖的轻量 Web 界面，适合无桌面环境、ARM 开发板或远程访问：
+
+- 品类管理，bank/test 图片独立存放
+- 浏览器上传图片
+- SSE 实时推送构建进度
+- AJAX 检测结果在不刷新页面的情况下更新图片框
+- 局域网内任意设备均可访问
 
 ### 发布（单文件可执行）
 ```bash
@@ -50,7 +64,8 @@ RAD-csharp/
 │   │   ├── 记忆库构建与 KNN 检索
 │   │   ├── 图像预处理（ImageSharp）
 │   │   └── 可视化（热力图、叠加、掩码）
-│   └── RAD.UI/             # 桌面 GUI（MewUI）
+│   ├── RAD.UI/             # 桌面 GUI（MewUI）
+│   └── RAD.WebUI/          # Web 界面（HttpListener，零依赖）
 └── RAD-main/               # Python 参考代码
 ```
 

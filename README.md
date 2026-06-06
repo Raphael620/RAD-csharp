@@ -24,10 +24,24 @@ Desktop application for visual anomaly detection using DINOv3 features. Based on
 ### Requirements
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 
-### Build & Run
+### RAD.UI (Desktop GUI)
 ```bash
 dotnet run --project src/RAD.UI/RAD.UI.csproj
 ```
+
+### RAD.WebUI (Web Interface)
+```bash
+dotnet run --project src/RAD.WebUI/RAD.WebUI.csproj
+# Open http://localhost:8080  (use -- <port> to change port)
+```
+
+**RAD.WebUI** provides a lightweight web interface with zero external dependencies, ideal for headless servers, ARM SBCs, or remote access:
+
+- Manage categories with separate bank/test image pools
+- Upload images via browser
+- Real-time build progress via SSE streaming
+- AJAX-based detection results displayed inline
+- Works on any device with a browser on the same network
 
 ### Publish (single-file executable)
 ```bash
@@ -52,7 +66,8 @@ RAD-csharp/
 │   │   ├── Memory bank construction & KNN retrieval
 │   │   ├── Image preprocessing (ImageSharp)
 │   │   └── Visualization (heatmap, overlay, mask)
-│   └── RAD.UI/             # Desktop GUI (MewUI)
+│   ├── RAD.UI/             # Desktop GUI (MewUI)
+│   └── RAD.WebUI/          # Web interface (HttpListener, zero deps)
 └── RAD-main/               # Python reference (not in source tree)
 ```
 
@@ -60,9 +75,9 @@ RAD-csharp/
 
 | Library | Purpose |
 |---------|---------|
-| ONNX Runtime (DirectML) | DINOv3 model inference |
+| ONNX Runtime | DINOv3 model inference |
 | SixLabors.ImageSharp | Image preprocessing & visualization |
-| MewUI | Cross-platform desktop GUI |
+| MewUI | Desktop GUI (RAD.UI only) |
 
 ## Reference
 
