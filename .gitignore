@@ -49,3 +49,21 @@ bank/
 RAD-main/
 RAD-sample/
 .bitfun/
+
+# Generated output
+output/
+
+# Model bank (generated at runtime)
+model/bank_dinov2/
+model/rad-1/
+
+# Large / intermediate / test files
+model/*.mp4
+model/*.zip
+model/*simplified*.onnx
+model/*skip_eliminate*.onnx
+
+# Tooling
+.codegraph/
+.reasonix/
+reasonix.toml

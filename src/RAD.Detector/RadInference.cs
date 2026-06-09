@@ -35,7 +35,9 @@ public sealed class RadInference : IDisposable
         _kImage = kImage;
         CreateSession(device);
         _modelInfo = OnnxModelInfo.FromSession(_session);
-        _layerWeights = Enumerable.Repeat(1f / _modelInfo.LayerIndices.Length, _modelInfo.LayerIndices.Length).ToArray();
+        _layerWeights = _modelInfo.IsMultiLayer
+            ? Enumerable.Repeat(1f / _modelInfo.LayerIndices.Length, _modelInfo.LayerIndices.Length).ToArray()
+            : [1f];
     }
 
     public string SwitchDevice(string device = "CPU")
@@ -206,6 +208,8 @@ public sealed class RadInference : IDisposable
     
     /// <summary>
     /// Run ONNX inference. Returns patch and cls outputs per layer + actual C dimension.
+    /// For multi-layer models (DINOv3): reads patch_X/cls_X outputs.
+    /// For single-layer models (DINOv2): splits last_hidden_state into CLS (token 0) + patches (tokens 1..L).
     /// </summary>
     private void RunInference(float[] input, out float[][] patchOuts, out float[][] clsOuts, out int actualC)
     {
@@ -213,28 +217,55 @@ public sealed class RadInference : IDisposable
         int[] dims = [1, 3, 448, 448];
         var denseTensor = new Microsoft.ML.OnnxRuntime.Tensors.DenseTensor<float>(dims);
         input.AsSpan().CopyTo(denseTensor.Buffer.Span);
-        var namedInput = NamedOnnxValue.CreateFromTensor("input", denseTensor);
+        var namedInput = NamedOnnxValue.CreateFromTensor(_modelInfo.InputName, denseTensor);
 
         var inputs = new List<NamedOnnxValue> { namedInput };
-
         using var results = _session.Run(inputs);
-
-        var dict = new Dictionary<string, float[]>();
-        foreach (var result in results)
-        {
-            var t = result.AsTensor<float>();
-            dict[result.Name] = t.ToArray();
-            if (result.Name == $"patch_{_modelInfo.LayerIndices[0]}")
-                actualC = (int)t.Dimensions[2];
-        }
 
         int numLayers = _modelInfo.LayerIndices.Length;
         patchOuts = new float[numLayers][];
         clsOuts = new float[numLayers][];
-        for (int li = 0; li < numLayers; li++)
+
+        if (_modelInfo.IsMultiLayer)
         {
-            patchOuts[li] = dict[$"patch_{_modelInfo.LayerIndices[li]}"];
-            clsOuts[li] = dict[$"cls_{_modelInfo.LayerIndices[li]}"];
+            // DINOv3-style: named outputs patch_3, cls_3, patch_6, cls_6, ...
+            var dict = new Dictionary<string, float[]>();
+            foreach (var result in results)
+            {
+                var t = result.AsTensor<float>();
+                dict[result.Name] = t.ToArray();
+                if (result.Name == $"patch_{_modelInfo.LayerIndices[0]}")
+                    actualC = (int)t.Dimensions[2];
+            }
+
+            for (int li = 0; li < numLayers; li++)
+            {
+                patchOuts[li] = dict[$"patch_{_modelInfo.LayerIndices[li]}"];
+                clsOuts[li] = dict[$"cls_{_modelInfo.LayerIndices[li]}"];
+            }
+        }
+        else
+        {
+            // DINOv2-style: single output last_hidden_state [1, 1+L, C]
+            // Token 0 = CLS, tokens 1..L = patches
+            var result = results.First();
+            var t = result.AsTensor<float>();
+            int totalTokens = (int)t.Dimensions[1];
+            int embedDim = (int)t.Dimensions[2];
+            int numPatches = totalTokens - 1;
+            actualC = embedDim;
+
+            var data = t.ToArray();
+
+            // Extract CLS: the first token
+            float[] clsData = new float[embedDim];
+            Array.Copy(data, 0, clsData, 0, embedDim);
+            clsOuts[0] = clsData;
+
+            // Extract patches: tokens 1..L, flatten to [L*C]
+            float[] patchData = new float[numPatches * embedDim];
+            Array.Copy(data, embedDim, patchData, 0, numPatches * embedDim);
+            patchOuts[0] = patchData;
         }
     }
 
